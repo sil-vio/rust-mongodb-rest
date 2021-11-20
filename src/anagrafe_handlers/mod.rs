@@ -113,7 +113,7 @@ async fn get_soggetto_by_id(
     let id = log_id.as_str();
 
     return match soggetti_collection
-        .find_one(doc! { "_id":ObjectId::with_string(id).unwrap()}, None)
+        .find_one(doc! { "_id":ObjectId::parse_str(id).unwrap()}, None)
         .await
     {
         Ok(result) => match result {

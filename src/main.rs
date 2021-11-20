@@ -7,7 +7,7 @@ use mongodb::{Client, options::ClientOptions};
 mod anagrafe_handlers;
 mod time_handlers;
 
-#[actix_rt::main]
+#[actix_web::main]
 async fn main() -> std::io::Result<()> {
     if env::var_os("RUST_LOG").is_none() {
         env::set_var("RUST_LOG", "actix_web=debug");
