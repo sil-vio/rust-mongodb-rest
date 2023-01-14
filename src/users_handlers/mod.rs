@@ -3,7 +3,7 @@ use bson::{doc, oid::ObjectId, Document};
 use futures::stream::StreamExt;
 use mongodb::{options::FindOptions, Client};
 use serde::{Deserialize, Serialize};
-use std::{sync::Mutex};
+use std::{sync::Mutex, ffi::OsString};
 
 
 #[derive(Serialize, Deserialize, )]
@@ -64,36 +64,45 @@ pub fn scoped_config(cfg: &mut web::ServiceConfig) {
 }
 
 async fn get_soggetti(    req: HttpRequest,
-    data: web::Data<Mutex<Client>>) -> impl Responder {
-    let logs_collection = data
-        .lock()
-        .unwrap()
-        .database(MONGO_DB)
-        .collection(MONGO_COLL_LOGS);
-
-    let params = web::Query::<Params>::from_query(req.query_string()).unwrap();
-    let mut filter: Document = doc! {};
-    if  params.cf.capacity() > 0 {
-        filter = doc! { "cf": params.cf.to_owned() } 
-    } 
-
-    let find_options = FindOptions::builder().sort(doc! { "_id": -1}).build();
-    let mut cursor = logs_collection.find(filter, find_options).await.unwrap();
-
+    client: web::Data<Mutex<Client>>,
+    no_db: web::Data<OsString>) -> impl Responder {
+    let no_db_flag = no_db.to_str().unwrap();
     let mut results = Vec::new();
-    while let Some(result) = cursor.next().await {
-        match result {
-            Ok(document) => {
-                let entity = bson::from_bson::<User>(bson::Bson::Document(document)).unwrap();
-                results.push(UserDTO::from(entity));
-            }
-            _ => {
-                return HttpResponse::InternalServerError().finish();
+    if no_db_flag == "true" {
+        let user = UserDTO{id: Some(ObjectId::new().to_hex().to_owned()), name: Some("Silvio".to_owned()), surname: Some("Giannini".to_owned()), cf: Some("GNNSLV81P18D612C".to_owned())};
+        results.push(user);
+
+    } else {
+        let logs_collection = client
+            .lock()
+            .unwrap()
+            .database(MONGO_DB)
+            .collection(MONGO_COLL_LOGS);
+
+        let params = web::Query::<Params>::from_query(req.query_string()).unwrap();
+        let mut filter: Document = doc! {};
+        if  params.cf.capacity() > 0 {
+            filter = doc! { "cf": params.cf.to_owned() } 
+        } 
+
+        let find_options = FindOptions::builder().sort(doc! { "_id": -1}).build();
+        let mut cursor = logs_collection.find(filter, find_options).await.unwrap();
+
+        while let Some(result) = cursor.next().await {
+            match result {
+                Ok(document) => {
+                    let entity = bson::from_bson::<User>(bson::Bson::Document(document)).unwrap();
+                    results.push(UserDTO::from(entity));
+                }
+                _ => {
+                    return HttpResponse::InternalServerError().finish();
+                }
             }
         }
     }
     HttpResponse::Ok().json(results)
 }
+
 
 async fn get_soggetto_by_id(
     data: web::Data<Mutex<Client>>,

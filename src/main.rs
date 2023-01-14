@@ -17,9 +17,12 @@ async fn main() -> std::io::Result<()> {
     let mut client_options = ClientOptions::parse(&mongo_url).await.unwrap();
     client_options.app_name = Some("User".to_string());
     let client = web::Data::new(Mutex::new(Client::with_options(client_options).unwrap()));
-
+    let no_db = web::Data::new(env::var_os("NO_DB").unwrap_or("false".into()));
     HttpServer::new(move || {
-        App::new().app_data(client.clone()).service(
+        App::new()
+        .app_data(no_db.clone())
+        .app_data(client.clone())
+        .service(
             web::scope("/api")
                 .configure(users_handlers::scoped_config)
                 .configure(time_handlers::scoped_config),
