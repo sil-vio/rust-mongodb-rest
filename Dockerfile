@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------------------
 # Cargo Build Stage
 # ------------------------------------------------------------------------------
-FROM rust:latest as cargo-build
+FROM rust:1.66.1-slim-buster as cargo-build
 WORKDIR /usr/src/myapp
 COPY Cargo.toml Cargo.toml
 RUN mkdir src/
