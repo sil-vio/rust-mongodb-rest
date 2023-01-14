@@ -2,13 +2,12 @@
 name = "myapp"
 version = "0.1.0"
 authors = [""]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
-actix-web = "2.0"
-actix-rt = "1.1.1"
-bson = "1.0.0"
-chrono = "0.4.11"
-futures = "0.3.5"
-mongodb = "1.0.0"
+actix-web = "4"
+bson = "2.0.0"
+chrono = "0.4.19"
+futures = "0.3.17"
+mongodb = "2.0.0"
 serde = { version = "1.0", features = ["derive"] }
