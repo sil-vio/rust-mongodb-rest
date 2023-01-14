@@ -1,87 +1,82 @@
-use actix_web::{web, HttpResponse, Responder};
-use bson::{doc, oid::ObjectId};
+use actix_web::{web, HttpResponse, Responder, HttpRequest};
+use bson::{doc, oid::ObjectId, Document};
 use futures::stream::StreamExt;
 use mongodb::{options::FindOptions, Client};
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
+use std::{sync::Mutex};
 
 
 #[derive(Serialize, Deserialize, )]
-#[derive(Copy, Clone)]
-enum STATO {
-    PROVVISORIO,
-    INCOMPLETO,
-    VALIDATO,
-    UNITO,
-    ELIMINATO,
-}
-
-
-#[derive(Serialize, Deserialize, )]
-pub struct SoggettoDTO {
+pub struct UserDTO {
     id: Option<String>,
-    nome: Option<String>,
-    cognome: Option<String>,
+    name: Option<String>,
+    surname: Option<String>,
     cf: Option<String>,
-    stato: STATO,
 }
-impl From<Soggetto> for SoggettoDTO {
-    fn from(entity: Soggetto) -> Self {
-        SoggettoDTO {
+impl From<User> for UserDTO {
+    fn from(entity: User) -> Self {
+        UserDTO {
             id: Option::from(entity.id.to_hex()),
-            nome: entity.nome,
-            cognome: entity.cognome,
+            name: entity.name,
+            surname: entity.surname,
             cf: entity.cf,
-            stato: entity.stato,
         }
     }
 }
 
+#[derive(Debug, Deserialize)]
+pub struct Params {
+    cf: String,
+}
+
 
 #[derive(Serialize, Deserialize, )]
-pub struct Soggetto {
+pub struct User {
     #[serde(rename = "_id")]
     id: ObjectId,
-    nome: Option<String>,
-    cognome: Option<String>,
+    name: Option<String>,
+    surname: Option<String>,
     cf: Option<String>,
-    stato: STATO,
 }
 
 
-impl From<SoggettoDTO> for Soggetto {
-    fn from(dto: SoggettoDTO) -> Self {
-        Soggetto {
+impl From<UserDTO> for User {
+    fn from(dto: UserDTO) -> Self {
+        User {
             id: ObjectId::new(),
-            nome: Option::from(String::from(&dto.nome.unwrap())),
-            cognome: Option::from(String::from(&dto.cognome.unwrap())),
+            name: Option::from(String::from(&dto.name.unwrap())),
+            surname: Option::from(String::from(&dto.surname.unwrap())),
             cf: Option::from(convert_option_string(dto.cf)),
-            stato: dto.stato
         }
     }
 }
 
-const MONGO_DB: &'static str = "anagrafe";
-const MONGO_COLL_LOGS: &'static str = "soggetti";
+const MONGO_DB: &'static str = "my_database";
+const MONGO_COLL_LOGS: &'static str = "users";
 
 pub fn scoped_config(cfg: &mut web::ServiceConfig) {
     cfg.service(
-        web::resource("/anagrafe/soggetti")
+        web::resource("/users")
             .route(web::get().to(get_soggetti))
             .route(web::post().to(add_soggetto)),
     );
-    cfg.service(web::resource("/anagrafe/soggetti/{id}").route(web::get().to(get_soggetto_by_id)));
+    cfg.service(web::resource("/users/{id}").route(web::get().to(get_soggetto_by_id)));
 }
 
-async fn get_soggetti(data: web::Data<Mutex<Client>>) -> impl Responder {
+async fn get_soggetti(    req: HttpRequest,
+    data: web::Data<Mutex<Client>>) -> impl Responder {
     let logs_collection = data
         .lock()
         .unwrap()
         .database(MONGO_DB)
         .collection(MONGO_COLL_LOGS);
 
-    let filter = doc! {};
-    //   let find_options = FindOptions::builder().sort(doc! { "createdOn": 1 }).build();
+    let params = web::Query::<Params>::from_query(req.query_string()).unwrap();
+    let mut filter: Document = doc! {};
+    if  params.cf.capacity() > 0 {
+        filter = doc! { "cf": params.cf.to_owned() } 
+    } 
+
     let find_options = FindOptions::builder().sort(doc! { "_id": -1}).build();
     let mut cursor = logs_collection.find(filter, find_options).await.unwrap();
 
@@ -89,8 +84,8 @@ async fn get_soggetti(data: web::Data<Mutex<Client>>) -> impl Responder {
     while let Some(result) = cursor.next().await {
         match result {
             Ok(document) => {
-                let entity = bson::from_bson::<Soggetto>(bson::Bson::Document(document)).unwrap();
-                results.push(SoggettoDTO::from(entity));
+                let entity = bson::from_bson::<User>(bson::Bson::Document(document)).unwrap();
+                results.push(UserDTO::from(entity));
             }
             _ => {
                 return HttpResponse::InternalServerError().finish();
@@ -118,8 +113,8 @@ async fn get_soggetto_by_id(
     {
         Ok(result) => match result {
             Some(document) => {
-                let soggetto = bson::from_bson::<Soggetto>(bson::Bson::Document(document)).unwrap();
-                HttpResponse::Ok().json(SoggettoDTO::from(soggetto))
+                let soggetto = bson::from_bson::<User>(bson::Bson::Document(document)).unwrap();
+                HttpResponse::Ok().json(UserDTO::from(soggetto))
             }
             None => {
                 HttpResponse::NotFound().body(format!("No log found with id: {}", log_id))
@@ -132,14 +127,14 @@ async fn get_soggetto_by_id(
     };
 }
 
-async fn add_soggetto(data: web::Data<Mutex<Client>>, request: web::Json<SoggettoDTO>) -> impl Responder {
+async fn add_soggetto(data: web::Data<Mutex<Client>>, request: web::Json<UserDTO>) -> impl Responder {
     let logs_collection = data
         .lock()
         .unwrap()
         .database(MONGO_DB)
         .collection(MONGO_COLL_LOGS);
 
-    let soggetto = Soggetto::from(request.into_inner());
+    let soggetto = User::from(request.into_inner());
 
     match bson::to_bson(&soggetto) {
         Ok(model_bson) => {
@@ -170,20 +165,6 @@ async fn add_soggetto(data: web::Data<Mutex<Client>>, request: web::Json<Soggett
             return HttpResponse::InternalServerError().finish();
         }
     }
-
-    /*  match logs_collection.insert_one(doc! {"deviceId": &soggetto.id, "message": &new_log.message, "createdOn": Bson::DateTime(Utc::now())}, None).await {
-         Ok(db_result) => {
-             if let Some(new_id) = db_result.inserted_id.as_object_id() {
-                 println!("New document inserted with id {}", new_id);
-             }
-             return HttpResponse::Created().json(db_result.inserted_id)
-         }
-         Err(err) =>
-         {
-             println!("Failed! {}", err);
-             return HttpResponse::InternalServerError().finish()
-         }
-     } */
 }
 
 fn convert_option_string(input: Option<String>) -> String {
