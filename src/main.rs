@@ -1,5 +1,4 @@
 use std::env;
-use std::sync::*;
 
 use actix_web::{App, HttpServer, web};
 use mongodb::{Client, options::ClientOptions};
@@ -16,7 +15,7 @@ async fn main() -> std::io::Result<()> {
     println!("Using connection string: {}", mongo_url);
     let mut client_options = ClientOptions::parse(&mongo_url).await.unwrap();
     client_options.app_name = Some("User".to_string());
-    let client = web::Data::new(Mutex::new(Client::with_options(client_options).unwrap()));
+    let client = web::Data::new(Client::with_options(client_options).unwrap());
     let no_db = web::Data::new(env::var_os("NO_DB").unwrap_or("false".into()));
     HttpServer::new(move || {
         App::new()

@@ -1,9 +1,10 @@
 use actix_web::{web, HttpResponse, Responder, HttpRequest};
 use bson::{doc, oid::ObjectId, Document};
 use futures::stream::StreamExt;
-use mongodb::{options::FindOptions, Client};
+use mongodb::{Client};
 use serde::{Deserialize, Serialize};
-use std::{sync::Mutex, ffi::OsString};
+use std::{ffi::OsString};
+use futures::stream::TryStreamExt;
 
 
 #[derive(Serialize, Deserialize, )]
@@ -63,8 +64,8 @@ pub fn scoped_config(cfg: &mut web::ServiceConfig) {
     cfg.service(web::resource("/users/{id}").route(web::get().to(get_soggetto_by_id)));
 }
 
-async fn get_soggetti(    req: HttpRequest,
-    client: web::Data<Mutex<Client>>,
+async fn get_soggetti(req: HttpRequest,
+    data: web::Data<Client>,
     no_db: web::Data<OsString>) -> impl Responder {
     let no_db_flag = no_db.to_str().unwrap();
     let mut results = Vec::new();
@@ -73,11 +74,9 @@ async fn get_soggetti(    req: HttpRequest,
         results.push(user);
 
     } else {
-        let logs_collection = client
-            .lock()
-            .unwrap()
+        let coll = data
             .database(MONGO_DB)
-            .collection(MONGO_COLL_LOGS);
+            .collection::<User>(MONGO_COLL_LOGS);
 
         let params = web::Query::<Params>::from_query(req.query_string()).unwrap();
         let mut filter: Document = doc! {};
@@ -85,32 +84,20 @@ async fn get_soggetti(    req: HttpRequest,
             filter = doc! { "cf": params.cf.to_owned() } 
         } 
 
-        let find_options = FindOptions::builder().sort(doc! { "_id": -1}).build();
-        let mut cursor = logs_collection.find(filter, find_options).await.unwrap();
+        // let find_options = FindOptions::builder().sort(doc! { "_id": -1}).build();
+        let cursor = coll.find(filter, None).await.unwrap().try_collect::<Vec<User>>().await.unwrap();
+        results = cursor.into_iter().map(|e| UserDTO::from(e)).collect();
 
-        while let Some(result) = cursor.next().await {
-            match result {
-                Ok(document) => {
-                    let entity = bson::from_bson::<User>(bson::Bson::Document(document)).unwrap();
-                    results.push(UserDTO::from(entity));
-                }
-                _ => {
-                    return HttpResponse::InternalServerError().finish();
-                }
-            }
-        }
     }
     HttpResponse::Ok().json(results)
 }
 
 
 async fn get_soggetto_by_id(
-    data: web::Data<Mutex<Client>>,
+    data: web::Data<Client>,
     log_id: web::Path<String>,
 ) -> impl Responder {
     let soggetti_collection = data
-        .lock()
-        .unwrap()
         .database(MONGO_DB)
         .collection(MONGO_COLL_LOGS);
 
@@ -136,10 +123,8 @@ async fn get_soggetto_by_id(
     };
 }
 
-async fn add_soggetto(data: web::Data<Mutex<Client>>, request: web::Json<UserDTO>) -> impl Responder {
+async fn add_soggetto(data: web::Data<Client>, request: web::Json<UserDTO>) -> impl Responder {
     let logs_collection = data
-        .lock()
-        .unwrap()
         .database(MONGO_DB)
         .collection(MONGO_COLL_LOGS);
 
